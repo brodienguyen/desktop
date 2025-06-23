@@ -525,16 +525,20 @@ export class Preferences extends React.Component<
         View = (
           <Advanced
             useWindowsOpenSSH={this.state.useWindowsOpenSSH}
-            optOutOfUsageTracking={this.state.optOutOfUsageTracking}
-            useExternalCredentialHelper={this.state.useExternalCredentialHelper}
-            repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             onUseWindowsOpenSSHChanged={this.onUseWindowsOpenSSHChanged}
+            optOutOfUsageTracking={this.state.optOutOfUsageTracking}
             onOptOutofReportingChanged={this.onOptOutofReportingChanged}
+            useExternalCredentialHelper={this.state.useExternalCredentialHelper}
             onUseExternalCredentialHelperChanged={
               this.onUseExternalCredentialHelperChanged
             }
+            repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             onRepositoryIndicatorsEnabledChanged={
               this.onRepositoryIndicatorsEnabledChanged
+            }
+            copilotCustomInstructions={this.state.copilotCustomInstructions}
+            onCopilotCustomInstructionsChanged={
+              this.onCopilotCustomInstructionsChanged
             }
           />
         )
