@@ -525,17 +525,24 @@ export class Preferences extends React.Component<
         View = (
           <Advanced
             useWindowsOpenSSH={this.state.useWindowsOpenSSH}
-            onUseWindowsOpenSSHChanged={this.onUseWindowsOpenSSHChanged}
             optOutOfUsageTracking={this.state.optOutOfUsageTracking}
-            onOptOutofReportingChanged={this.onOptOutofReportingChanged}
             useExternalCredentialHelper={this.state.useExternalCredentialHelper}
+            repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
+            onUseWindowsOpenSSHChanged={this.onUseWindowsOpenSSHChanged}
+            onOptOutofReportingChanged={this.onOptOutofReportingChanged}
             onUseExternalCredentialHelperChanged={
               this.onUseExternalCredentialHelperChanged
             }
-            repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             onRepositoryIndicatorsEnabledChanged={
               this.onRepositoryIndicatorsEnabledChanged
             }
+          />
+        )
+        break
+      }
+      case PreferencesTab.Copilot: {
+        View = (
+          <Copilot
             copilotCustomInstructions={this.state.copilotCustomInstructions}
             onCopilotCustomInstructionsChanged={
               this.onCopilotCustomInstructionsChanged

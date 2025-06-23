@@ -19,7 +19,9 @@ interface IInstructionsFileSettingProps {
   readonly disabled?: boolean
 }
 
-const InstructionsFileSetting: React.FC<IInstructionsFileSettingProps> = props => {
+const InstructionsFileSetting: React.FC<
+  IInstructionsFileSettingProps
+> = props => {
   return (
     <Row>
       <div className="copilot-instructions-container">
@@ -40,7 +42,8 @@ export const Copilot: React.FC<ICopilotPreferencesProps> = props => {
   const { repository, onOpenPathInExternalEditor } = props
   const [hasWorkspaceInstructions, setHasWorkspaceInstructions] =
     React.useState(false)
-  const [hasGlobalInstructions, setHasGlobalInstructions] = React.useState(false)
+  const [hasGlobalInstructions, setHasGlobalInstructions] =
+    React.useState(false)
 
   const updateFileExistsState = React.useCallback(async () => {
     const globalExists = await copilotManager.globalInstructionsExist()
