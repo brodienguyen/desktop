@@ -122,7 +122,6 @@ import {
   ChangesWorkingDirectorySelection,
   isRebaseConflictState,
   isCherryPickConflictState,
-  IFileListFilterState,
   isMergeConflictState,
   IMultiCommitOperationState,
   IConstrainedValue,
@@ -235,6 +234,8 @@ import {
   getObject,
   setObject,
   getFloatNumber,
+  getString,
+  setString,
 } from '../local-storage'
 import { ExternalEditorError, suggestedExternalEditor } from '../editors/shared'
 import { ApiRepositoriesStore } from './api-repositories-store'
@@ -263,7 +264,6 @@ import {
   defaultUncommittedChangesStrategy,
 } from '../../models/uncommitted-changes-strategy'
 import { IStashEntry, StashedChangesLoadStates } from '../../models/stash-entry'
-import { copilotManager } from '../copilot'
 import { arrayEquals } from '../equality'
 import { MenuLabelsEvent } from '../../models/menu-labels'
 import { findRemoteBranchName } from './helpers/find-branch-name'
@@ -460,6 +460,8 @@ const commitMessageGenerationDisclaimerLastSeenKey =
 const commitMessageGenerationButtonClickedKey =
   'commit-message-generation-button-clicked'
 
+const copilotCustomInstructionsKey = 'copilot-custom-instructions'
+
 export const showChangesFilterKey = 'show-changes-filter'
 export const showChangesFilterDefault = true
 
@@ -617,6 +619,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private commitMessageGenerationButtonClicked: boolean = false
 
   private showChangesFilter: boolean = false
+  private copilotCustomInstructions: string | null = getString(
+    copilotCustomInstructionsKey
+  )
 
   public constructor(
     private readonly gitHubUserStore: GitHubUserStore,
@@ -1115,6 +1120,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitMessageGenerationButtonClicked:
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
+      copilotCustomInstructions: this.copilotCustomInstructions,
     }
   }
 
@@ -2353,6 +2359,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
       showChangesFilterKey,
       showChangesFilterDefault
     )
+    this.copilotCustomInstructions =
+      getString(copilotCustomInstructionsKey) ?? null
 
     this.emitUpdateNow()
 
@@ -2376,22 +2384,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Start with all the available width
     let available = window.innerWidth
 
-    // // The tutorial currently has a fixed-width sidebar which we have to account
-    // // for so it makes sense to limit the width of the file list in order to
-    // // give the tutorial enough space to show its content.
-    const tutorialMinWidth =
-      this.currentOnboardingTutorialStep === TutorialStep.NotApplicable
-        ? 0
-        : 650
-
     // Working our way from left to right (i.e. giving priority to the leftmost
     // pane when we need to constrain the width)
     //
     // 220 was determined as the minimum value since it is the smallest width
     // that will still fit the placeholder text in the branch selector textbox
     // of the history tab
-    const maxSidebarWidth =
-      available - Math.max(toolbarButtonsMinWidth, tutorialMinWidth)
+    const maxSidebarWidth = available - toolbarButtonsMinWidth
     this.sidebarWidth = constrain(this.sidebarWidth, 220, maxSidebarWidth)
 
     // Now calculate the width we have left to distribute for the other panes
@@ -5495,27 +5494,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     return this.withIsGeneratingCommitMessage(repository, async () => {
-      // If user is amending a commit, we want to use the commit
-      // to amend as the base for the commit message generation.
-      const commitToAmend =
-        this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
-        undefined
-      const diff = await getFilesDiffText(
-        repository,
-        filesSelected,
-        commitToAmend ? `${commitToAmend}^` : undefined
-      )
+      const diff = await getFilesDiffText(repository, filesSelected)
       if (!diff) {
         return false
       }
 
       const api = API.fromAccount(account)
       try {
-        const { instructions } =
-          await copilotManager.resolveCopilotInstructions(repository)
         const response = await api.getDiffChangesCommitMessage(
           diff,
-          instructions
+          this.copilotCustomInstructions
         )
 
         this._setCommitMessage(repository, {
@@ -8338,53 +8326,21 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
-  public _updateFileListFilter(
-    repository: Repository,
-    filterUpdate: Partial<IFileListFilterState>
-  ) {
-    this.repositoryStateCache.updateChangesState(repository, state => ({
-      fileListFilter: {
-        ...state.fileListFilter,
-        ...filterUpdate,
-      },
+  public _setChangesListFilterText(repository: Repository, filterText: string) {
+    this.repositoryStateCache.updateChangesState(repository, () => ({
+      filterText,
     }))
     this.emitUpdate()
   }
 
-  public _setChangesListFilterText(repository: Repository, filterText: string) {
-    this._updateFileListFilter(repository, { filterText })
-  }
-
   public _setIncludedChangesInCommitFilter(
     repository: Repository,
-    isIncludedInCommit: boolean
+    includedChangesInCommitFilter: boolean
   ) {
-    this._updateFileListFilter(repository, { isIncludedInCommit })
-  }
-
-  public _setFilterNewFiles(repository: Repository, isNewFile: boolean) {
-    this._updateFileListFilter(repository, { isNewFile })
-  }
-
-  public _setFilterModifiedFiles(
-    repository: Repository,
-    isModifiedFile: boolean
-  ) {
-    this._updateFileListFilter(repository, { isModifiedFile })
-  }
-
-  public _setFilterDeletedFiles(
-    repository: Repository,
-    isDeletedFile: boolean
-  ) {
-    this._updateFileListFilter(repository, { isDeletedFile })
-  }
-
-  public _setFilterExcludedFiles(
-    repository: Repository,
-    isExcludedFromCommit: boolean
-  ) {
-    this._updateFileListFilter(repository, { isExcludedFromCommit })
+    this.repositoryStateCache.updateChangesState(repository, () => ({
+      includedChangesInCommitFilter,
+    }))
+    this.emitUpdate()
   }
 
   public async _createPushProtectionBypass(
@@ -8428,6 +8384,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.showChangesFilter = !this.showChangesFilter
     setBoolean(showChangesFilterKey, this.showChangesFilter)
     this.updateMenuLabelsForSelectedRepository()
+    this.emitUpdate()
+  }
+
+  public _setCopilotCustomInstructions(instructions: string | null) {
+    this.copilotCustomInstructions = instructions
+    if (instructions === null) {
+      localStorage.removeItem(copilotCustomInstructionsKey)
+    } else {
+      setString(copilotCustomInstructionsKey, instructions)
+    }
     this.emitUpdate()
   }
 }
