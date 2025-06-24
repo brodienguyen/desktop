@@ -235,8 +235,6 @@ import {
   getObject,
   setObject,
   getFloatNumber,
-  getString,
-  setString,
 } from '../local-storage'
 import { ExternalEditorError, suggestedExternalEditor } from '../editors/shared'
 import { ApiRepositoriesStore } from './api-repositories-store'
@@ -265,6 +263,7 @@ import {
   defaultUncommittedChangesStrategy,
 } from '../../models/uncommitted-changes-strategy'
 import { IStashEntry, StashedChangesLoadStates } from '../../models/stash-entry'
+import { resolveCopilotInstructions } from '../copilot'
 import { arrayEquals } from '../equality'
 import { MenuLabelsEvent } from '../../models/menu-labels'
 import { findRemoteBranchName } from './helpers/find-branch-name'
@@ -461,8 +460,6 @@ const commitMessageGenerationDisclaimerLastSeenKey =
 const commitMessageGenerationButtonClickedKey =
   'commit-message-generation-button-clicked'
 
-const copilotCustomInstructionsKey = 'copilot-custom-instructions'
-
 export const showChangesFilterKey = 'show-changes-filter'
 export const showChangesFilterDefault = true
 
@@ -620,9 +617,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private commitMessageGenerationButtonClicked: boolean = false
 
   private showChangesFilter: boolean = false
-  private copilotCustomInstructions: string | null = getString(
-    copilotCustomInstructionsKey
-  )
 
   public constructor(
     private readonly gitHubUserStore: GitHubUserStore,
@@ -1121,7 +1115,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitMessageGenerationButtonClicked:
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
-      copilotCustomInstructions: this.copilotCustomInstructions,
     }
   }
 
@@ -2360,8 +2353,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
       showChangesFilterKey,
       showChangesFilterDefault
     )
-    this.copilotCustomInstructions =
-      getString(copilotCustomInstructionsKey) ?? null
 
     this.emitUpdateNow()
 
@@ -5520,10 +5511,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       const api = API.fromAccount(account)
       try {
-        const response = await api.getDiffChangesCommitMessage(
-          diff,
-          this.copilotCustomInstructions
+        const state = this.getState()
+        const repositoryForInstructions =
+          state.selectedState && state.selectedState.type === SelectionType.Repository
+            ? state.selectedState.repository
+            : null
+
+        const { instructions } = await resolveCopilotInstructions(
+          repositoryForInstructions
         )
+        const response = await api.getDiffChangesCommitMessage(diff, instructions)
 
         this._setCommitMessage(repository, {
           summary: response.title,
@@ -8435,16 +8432,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.showChangesFilter = !this.showChangesFilter
     setBoolean(showChangesFilterKey, this.showChangesFilter)
     this.updateMenuLabelsForSelectedRepository()
-    this.emitUpdate()
-  }
-
-  public _setCopilotCustomInstructions(instructions: string | null) {
-    this.copilotCustomInstructions = instructions
-    if (instructions === null) {
-      localStorage.removeItem(copilotCustomInstructionsKey)
-    } else {
-      setString(copilotCustomInstructionsKey, instructions)
-    }
     this.emitUpdate()
   }
 }
