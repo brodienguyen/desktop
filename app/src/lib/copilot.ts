@@ -1,154 +1,208 @@
 import { Repository } from '../models/repository'
-import { join, dirname } from 'path'
-import { pathExists as realPathExists } from '../ui/lib/path-exists'
-import {
-  readFile as realReadFile,
-  writeFile as realWriteFile,
-  mkdir as realMkdir,
-} from 'fs/promises'
-import { getPath as realGetPath } from '../ui/main-process-proxy'
+import { getPath } from '../ui/main-process-proxy'
+import { pathExists } from '../ui/lib/path-exists'
+import { readFile, writeFile, mkdir } from 'fs/promises'
+import * as Path from 'path'
 
 /**
- * The subset of file system and main process dependencies that are used by the
- * copilot module. This allows for providing mock implementations for testing.
+ * The filename for the workspace-level Copilot instructions file.
  */
-export interface ICopilotDependencies {
-  readonly pathExists: (path: string) => Promise<boolean>
-  readonly readFile: (path: string) => Promise<string>
-  readonly writeFile: (path: string, data: string) => Promise<void>
-  readonly mkdir: (
-    path: string,
-    options: { readonly recursive: true }
-  ) => Promise<void>
-  readonly getPath: (name: 'userData') => Promise<string>
+export const copilotWorkspaceInstructionsFileName = 'git-commit-instructions.md'
+
+/**
+ * The filename for the global Copilot instructions file.
+ */
+export const copilotGlobalInstructionsFileName =
+  'global-git-commit-instructions.md'
+
+/**
+ * The path to the workspace-level Copilot instructions file.
+ */
+export function getWorkspaceInstructionsPath(repository: Repository): string {
+  return Path.join(
+    repository.path,
+    '.github',
+    copilotWorkspaceInstructionsFileName
+  )
 }
 
-const defaultDependencies: ICopilotDependencies = {
-  pathExists: realPathExists,
-  readFile: path => realReadFile(path, 'utf8'),
-  writeFile: realWriteFile,
-  // The node fs.promises.mkdir function returns the path of the created
-  // directory, but we don't need it, so we'll just ignore it.
-  mkdir: async (path, options) => {
-    await realMkdir(path, options)
-  },
-  getPath: realGetPath,
+/**
+ * The path to the global Copilot instructions file.
+ */
+export async function getGlobalInstructionsPath(): Promise<string> {
+  // We're using `getPath('userData')` here, which corresponds to Electron's
+  // app.getPath('userData'). This is the correct, writable location for user-
+  // specific configuration files.
+  const userData = await getPath('userData')
+  return Path.join(userData, 'copilot', copilotGlobalInstructionsFileName)
 }
 
-const copilotWorkspaceInstructionsFileName = 'git-commit-instructions.md'
-const copilotGlobalInstructionsFileName = 'global-git-commit-instructions.md'
+/**
+ * Ensures the workspace-level Copilot instructions file exists and returns its path.
+ * If the file does not exist, it will be created.
+ */
+export async function ensureWorkspaceInstructions(
+  repository: Repository
+): Promise<string> {
+  const path = getWorkspaceInstructionsPath(repository)
+  if (!(await pathExists(path))) {
+    const parentDir = Path.dirname(path)
+    if (!(await pathExists(parentDir))) {
+      // .github folder doesn't exist, so create it.
+      await mkdir(parentDir, { recursive: true })
+    }
+    await writeFile(path, '')
+  }
+  return path
+}
+
+/**
+ * Ensures the global Copilot instructions file exists and returns its path.
+ * If the file does not exist, it will be created.
+ */
+export async function ensureGlobalInstructions(): Promise<string> {
+  const path = await getGlobalInstructionsPath()
+  if (!(await pathExists(path))) {
+    const parentDir = Path.dirname(path)
+    if (!(await pathExists(parentDir))) {
+      await mkdir(parentDir, { recursive: true })
+    }
+    await writeFile(path, '')
+  }
+  return path
+}
+
+/**
+ * Checks if the workspace-level Copilot instructions file exists.
+ */
+export async function workspaceInstructionsExist(
+  repository: Repository
+): Promise<boolean> {
+  return pathExists(getWorkspaceInstructionsPath(repository))
+}
+
+/**
+ * Checks if the global Copilot instructions file exists.
+ */
+export async function globalInstructionsExist(): Promise<boolean> {
+  return pathExists(await getGlobalInstructionsPath())
+}
 
 export type CopilotCommitMessageInstructions = {
   readonly instructions: string | null
-  readonly source: 'workspace' | 'global' | null
+  readonly source: 'workspace' | 'global' | 'default' | null
   readonly sourcePath?: string
 }
 
-export class CopilotManager {
-  private readonly dependencies: ICopilotDependencies
+const ConventionalCommitInstructions = `Write a commit message that follows the Conventional Commits specification. The commit message should be structured as follows:
 
-  public constructor(dependencies: ICopilotDependencies = defaultDependencies) {
-    this.dependencies = dependencies
+---
+
+feat: a new feature
+
+body: optional body
+
+---
+
+fix: a bug fix
+
+body: optional body
+
+---
+
+chore: changes that do not modify src or test files
+
+body: optional body
+
+---
+
+docs: documentation only changes
+
+body: optional body
+
+---
+
+style: changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+
+body: optional body
+
+---
+
+refactor: a code change that neither fixes a bug nor adds a feature
+
+body: optional body
+
+---
+
+perf: a code change that improves performance
+
+body: optional body
+
+---
+
+test: adding missing tests or correcting existing tests
+
+body: optional body
+
+---
+
+build: changes that affect the build system or external dependencies (example scopes: gulp, broccoli, npm)
+
+body: optional body
+
+---
+
+ci: changes to our CI configuration files and scripts (example scopes: Travis, Circle, BrowserStack, SauceLabs)
+
+body: optional body
+
+---
+
+revert: reverts a previous commit
+
+body: optional body
+
+---
+
+`
+
+async function readInstructionsFromFile(
+  path: string
+): Promise<string | undefined> {
+  if (await pathExists(path)) {
+    const content = await readFile(path, 'utf8')
+    return content
   }
-
-  private async ensureFile(path: string): Promise<void> {
-    if (await this.dependencies.pathExists(path)) {
-      return
-    }
-
-    const parentDir = dirname(path)
-    if (!(await this.dependencies.pathExists(parentDir))) {
-      await this.dependencies.mkdir(parentDir, { recursive: true })
-    }
-    await this.dependencies.writeFile(path, '')
-  }
-
-  public getWorkspaceInstructionsPath(repository: Repository): string {
-    return join(
-      repository.path,
-      '.github',
-      copilotWorkspaceInstructionsFileName
-    )
-  }
-
-  public async getGlobalInstructionsPath(): Promise<string> {
-    const userData = await this.dependencies.getPath('userData')
-    return join(userData, 'copilot', copilotGlobalInstructionsFileName)
-  }
-
-  public async workspaceInstructionsExist(
-    repository: Repository
-  ): Promise<boolean> {
-    const path = this.getWorkspaceInstructionsPath(repository)
-    return this.dependencies.pathExists(path)
-  }
-
-  public async globalInstructionsExist(): Promise<boolean> {
-    const path = await this.getGlobalInstructionsPath()
-    return this.dependencies.pathExists(path)
-  }
-
-  private async readInstructionsFromFile(path: string): Promise<string | null> {
-    if (await this.dependencies.pathExists(path)) {
-      const content = await this.dependencies.readFile(path)
-      // Don't return empty instructions.
-      return content.trim().length > 0 ? content : null
-    }
-    return null
-  }
-
-  public async resolveCopilotInstructions(
-    repository: Repository | null
-  ): Promise<CopilotCommitMessageInstructions> {
-    const sources: ReadonlyArray<{
-      source: 'workspace' | 'global'
-      getPath: () => Promise<string | null> | string | null
-    }> = [
-      {
-        source: 'workspace',
-        getPath: () =>
-          repository ? this.getWorkspaceInstructionsPath(repository) : null,
-      },
-      {
-        source: 'global',
-        getPath: () => this.getGlobalInstructionsPath(),
-      },
-    ]
-
-    for (const { source, getPath } of sources) {
-      const path = await getPath()
-      if (path === null) {
-        continue
-      }
-
-      const instructions = await this.readInstructionsFromFile(path)
-      if (instructions !== null) {
-        return { instructions, source, sourcePath: path }
-      }
-    }
-
-    return { instructions: null, source: null }
-  }
-
-  public async ensureWorkspaceInstructions(
-    repository: Repository
-  ): Promise<string> {
-    const path = this.getWorkspaceInstructionsPath(repository)
-    await this.ensureFile(path)
-    return path
-  }
-
-  public async ensureGlobalInstructions(): Promise<string> {
-    const path = await this.getGlobalInstructionsPath()
-    await this.ensureFile(path)
-    return path
-  }
+  return undefined
 }
 
-/**
- * The singleton instance of the CopilotManager.
- *
- * This should be used for all interactions with the copilot instructions
- * feature.
- */
-export const copilotManager = new CopilotManager()
+export async function resolveCopilotInstructions(
+  repository: Repository | null
+): Promise<CopilotCommitMessageInstructions> {
+  if (repository !== null) {
+    const workspacePath = getWorkspaceInstructionsPath(repository)
+    const workspaceInstructions = await readInstructionsFromFile(workspacePath)
+    if (workspaceInstructions !== undefined) {
+      return {
+        instructions: workspaceInstructions,
+        source: 'workspace',
+        sourcePath: workspacePath,
+      }
+    }
+  }
+
+  const globalPath = await getGlobalInstructionsPath()
+  const globalInstructions = await readInstructionsFromFile(globalPath)
+  if (globalInstructions !== undefined) {
+    return {
+      instructions: globalInstructions,
+      source: 'global',
+      sourcePath: globalPath,
+    }
+  }
+
+  return {
+    instructions: ConventionalCommitInstructions,
+    source: 'default',
+  }
+}

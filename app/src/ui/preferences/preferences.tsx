@@ -81,7 +81,6 @@ interface IPreferencesProps {
   readonly onEditGlobalGitConfig: () => void
   readonly underlineLinks: boolean
   readonly showDiffCheckMarks: boolean
-  readonly copilotCustomInstructions: string | null
 }
 
 interface IPreferencesState {
@@ -134,7 +133,6 @@ interface IPreferencesState {
   readonly underlineLinks: boolean
 
   readonly showDiffCheckMarks: boolean
-  readonly copilotCustomInstructions: string | null
 }
 
 /**
@@ -192,7 +190,7 @@ export class Preferences extends React.Component<
       isLoadingGitConfig: true,
       underlineLinks: this.props.underlineLinks,
       showDiffCheckMarks: this.props.showDiffCheckMarks,
-      copilotCustomInstructions: this.props.copilotCustomInstructions,
+
     }
   }
 
@@ -540,17 +538,6 @@ export class Preferences extends React.Component<
         )
         break
       }
-      case PreferencesTab.Copilot: {
-        View = (
-          <Copilot
-            copilotCustomInstructions={this.state.copilotCustomInstructions}
-            onCopilotCustomInstructionsChanged={
-              this.onCopilotCustomInstructionsChanged
-            }
-          />
-        )
-        break
-      }
       case PreferencesTab.Copilot:
         return (
           <Copilot
@@ -710,10 +697,6 @@ export class Preferences extends React.Component<
     this.setState({ showDiffCheckMarks: value })
   }
 
-  private onCopilotCustomInstructionsChanged = (instructions: string) => {
-    this.setState({ copilotCustomInstructions: instructions === '' ? null : instructions })
-  }
-
   private onSelectedTabSizeChanged = (tabSize: number) => {
     this.props.dispatcher.setSelectedTabSize(tabSize)
   }
@@ -861,14 +844,7 @@ export class Preferences extends React.Component<
 
     dispatcher.setDiffCheckMarksSetting(this.state.showDiffCheckMarks)
 
-    if (
-      this.state.copilotCustomInstructions !==
-      this.props.copilotCustomInstructions
-    ) {
-      this.props.dispatcher.setCopilotCustomInstructions(
-        this.state.copilotCustomInstructions
-      )
-    }
+
 
     this.props.onDismissed()
   }
